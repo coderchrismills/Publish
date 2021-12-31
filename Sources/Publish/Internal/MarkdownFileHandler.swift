@@ -8,73 +8,75 @@ import Files
 
 internal struct MarkdownFileHandler<Site: Website> {
     func addMarkdownFiles(
-        in folder: Folder,
-        to context: inout PublishingContext<Site>
-    ) throws {
-        let factory = context.makeMarkdownContentFactory()
+            in folder: Folder,
+            customContentParser: ((String, Site.ItemMetadata) -> Content)?,
+            to context: inout PublishingContext<Site>
+        ) throws {
+            let factory = context.makeMarkdownContentFactory()
 
-        if let indexFile = try? folder.file(named: "index.md") {
-            do {
-                context.index.content = try factory.makeContent(fromFile: indexFile)
-            } catch {
-                throw wrap(error, forPath: "\(folder.path)index.md")
-            }
-        }
-
-        for subfolder in folder.subfolders {
-            guard let sectionID = Site.SectionID(rawValue: subfolder.name.lowercased()) else {
-                try addPagesForMarkdownFiles(
-                    inFolder: subfolder,
-                    to: &context,
-                    recursively: true,
-                    parentPath: Path(subfolder.name),
-                    factory: factory
-                )
-
-                continue
+            if let indexFile = try? folder.file(named: "index.md") {
+                do {
+                    context.index.content = try factory.makeContent(fromFile: indexFile)
+                } catch {
+                    throw wrap(error, forPath: "\(folder.path)index.md")
+                }
             }
 
-            for file in subfolder.files.recursive {
-                guard file.isMarkdown else { continue }
+            for subfolder in folder.subfolders {
+                guard let sectionID = Site.SectionID(rawValue: subfolder.name.lowercased()) else {
+                    try addPagesForMarkdownFiles(
+                        inFolder: subfolder,
+                        to: &context,
+                        recursively: true,
+                        parentPath: Path(subfolder.name),
+                        factory: factory
+                    )
 
-                if file.nameExcludingExtension == "index", file.parent == subfolder {
-                    let content = try factory.makeContent(fromFile: file)
-                    context.sections[sectionID].content = content
                     continue
                 }
 
-                do {
-                    let fileName = file.nameExcludingExtension
-                    let path: Path
+                for file in subfolder.files.recursive {
+                    guard file.isMarkdown else { continue }
 
-                    if let parentPath = file.parent?.path(relativeTo: subfolder) {
-                        path = Path(parentPath).appendingComponent(fileName)
-                    } else {
-                        path = Path(fileName)
+                    if file.nameExcludingExtension == "index", file.parent == subfolder {
+                        let content = try factory.makeContent(fromFile: file)
+                        context.sections[sectionID].content = content
+                        continue
                     }
 
-                    let item = try factory.makeItem(
-                        fromFile: file,
-                        at: path,
-                        sectionID: sectionID
-                    )
+                    do {
+                        let fileName = file.nameExcludingExtension
+                        let path: Path
 
-                    context.addItem(item)
-                } catch {
-                    let path = Path(file.path(relativeTo: folder))
-                    throw wrap(error, forPath: path)
+                        if let parentPath = file.parent?.path(relativeTo: subfolder) {
+                            path = Path(parentPath).appendingComponent(fileName)
+                        } else {
+                            path = Path(fileName)
+                        }
+
+                        let item = try factory.makeItem(
+                            fromFile: file,
+                            at: path,
+                            customContentParser: customContentParser,
+                            sectionID: sectionID
+                        )
+
+                        context.addItem(item)
+                    } catch {
+                        let path = Path(file.path(relativeTo: folder))
+                        throw wrap(error, forPath: path)
+                    }
                 }
             }
-        }
 
-        try addPagesForMarkdownFiles(
-            inFolder: folder,
-            to: &context,
-            recursively: false,
-            parentPath: "",
-            factory: factory
-        )
-    }
+            try addPagesForMarkdownFiles(
+                inFolder: folder,
+                to: &context,
+                recursively: false,
+                parentPath: "",
+                factory: factory
+            )
+        }
 }
 
 private extension MarkdownFileHandler {
